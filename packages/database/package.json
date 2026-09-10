@@ -18,9 +18,9 @@
 		"postinstall": "prisma generate"
 	},
 	"dependencies": {
-		"@prisma/adapter-pg": "^7.9.1",
-		"@prisma/client": "^7.9.1",
-		"prisma": "^7.9.1"
+		"@prisma/adapter-pg": "^7.10.0",
+		"@prisma/client": "^7.10.0",
+		"prisma": "^7.10.0"
 	},
 	"devDependencies": {
 		"dotenv-cli": "^11.0.0",
