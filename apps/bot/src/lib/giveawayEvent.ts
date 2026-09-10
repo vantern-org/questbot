@@ -6,7 +6,14 @@ import { Prisma, prisma } from '@questbot/database';
 import type { Client } from 'discord.js';
 import { getChannel } from '#utils/getChannel.js';
 import { getShardInfo, type ShardInfo, shardOwns } from '#utils/sharding.js';
-import { buildGiveawayEmbed, type FinishGiveawayResult, finishGiveaway } from './giveaways.js';
+import {
+	buildGiveawayEmbed,
+	type FinishGiveawayResult,
+	finishGiveaway,
+	formatWinnersLine,
+	type RerollGiveawayResult,
+	rerollGiveawayWinners,
+} from './giveaways.js';
 import { logger } from './logger.js';
 import { createShardQueue } from './queue.js';
 
@@ -54,6 +61,33 @@ export async function unscheduleGiveawayEnd(giveawayId: string): Promise<void> {
 	await job?.remove().catch(() => {});
 }
 
+async function announceGiveawayOutcome(
+	client: Client,
+	giveaway: Prisma.GiveawayModel,
+	content: string,
+	mentionUsers: string[],
+): Promise<void> {
+	const channel = await getChannel(client.channels, giveaway.channelId);
+	if (!channel?.isSendable()) return;
+
+	const editMessage = giveaway.messageId
+		? channel.messages
+				.fetch(giveaway.messageId)
+				.then((message) => message.edit({ embeds: [buildGiveawayEmbed(giveaway)], components: [] }))
+				.catch(() => {})
+		: Promise.resolve();
+
+	const sendAnnouncement = channel
+		.send({
+			content,
+			allowedMentions: { users: mentionUsers },
+			...(giveaway.messageId ? { reply: { messageReference: giveaway.messageId } } : {}),
+		})
+		.catch((err) => logger.error(err));
+
+	await Promise.all([editMessage, sendAnnouncement]);
+}
+
 export async function endGiveaway(client: Client, giveawayId: string): Promise<FinishGiveawayResult> {
 	await unscheduleGiveawayEnd(giveawayId);
 
@@ -61,33 +95,27 @@ export async function endGiveaway(client: Client, giveawayId: string): Promise<F
 	if (result.status !== 'ended') return result;
 
 	const ended = result.giveaway;
-	const channel = await getChannel(client.channels, ended.channelId);
+	const content = ended.winnerIds.length
+		? `Congratulations ${formatWinnersLine(ended.winnerIds)}! You've won **${ended.prize}**!`
+		: `The giveaway for **${ended.prize}** ended with no entries.`;
 
-	if (channel?.isSendable()) {
-		if (ended.messageId) {
-			const message = await channel.messages.fetch(ended.messageId).catch(() => null);
-			if (message) {
-				await message.edit({ embeds: [buildGiveawayEmbed(ended)], components: [] }).catch(() => {});
-			}
-		}
+	await announceGiveawayOutcome(client, ended, content, ended.winnerIds);
 
-		if (ended.winnerIds.length) {
-			await channel
-				.send({
-					content: `Congratulations ${ended.winnerIds.map((id) => `<@${id}>`).join(', ')}! You've won **${ended.prize}**!`,
-					allowedMentions: { users: ended.winnerIds },
-					...(ended.messageId ? { reply: { messageReference: ended.messageId } } : {}),
-				})
-				.catch((err) => logger.error(err));
-		} else {
-			await channel
-				.send({
-					content: `The giveaway for **${ended.prize}** ended with no entries.`,
-					allowedMentions: { parse: [] },
-				})
-				.catch((err) => logger.error(err));
-		}
-	}
+	return result;
+}
+
+export async function rerollGiveaway(
+	client: Client,
+	giveawayId: string,
+	count?: number,
+): Promise<RerollGiveawayResult> {
+	const result = await rerollGiveawayWinners(giveawayId, count);
+	if (result.status !== 'rerolled') return result;
+
+	const giveaway = result.giveaway;
+	const content = `New winner(s) for **${giveaway.prize}**: ${formatWinnersLine(giveaway.winnerIds)}!`;
+
+	await announceGiveawayOutcome(client, giveaway, content, giveaway.winnerIds);
 
 	return result;
 }

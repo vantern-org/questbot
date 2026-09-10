@@ -16,7 +16,7 @@ import {
 } from 'discord.js';
 import ms, { type StringValue } from 'ms';
 import { containsBlockedWord } from '#lib/automod.js';
-import { endGiveaway, scheduleGiveawayEnd, unscheduleGiveawayEnd } from '#lib/giveawayEvent.js';
+import { endGiveaway, rerollGiveaway, scheduleGiveawayEnd, unscheduleGiveawayEnd } from '#lib/giveawayEvent.js';
 import {
 	buildGiveawayComponents,
 	buildGiveawayEmbed,
@@ -42,7 +42,7 @@ export class GiveawayCommand extends Command {
 		registry.registerChatInputCommand((builder: SlashCommandBuilder) =>
 			builder
 				.setName('giveaway')
-				.setDescription('Start, end or delete a giveaway.')
+				.setDescription('Start, end, delete or reroll a giveaway.')
 				.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 				.addSubcommand((subcommand: SlashCommandSubcommandBuilder) =>
 					subcommand
@@ -79,6 +79,17 @@ export class GiveawayCommand extends Command {
 						.setDescription('Delete a giveaway.')
 						.addStringOption((option: SlashCommandStringOption) =>
 							option.setName('id').setDescription('The message ID of the giveaway').setRequired(true).setMaxLength(32),
+						),
+				)
+				.addSubcommand((subcommand: SlashCommandSubcommandBuilder) =>
+					subcommand
+						.setName('reroll')
+						.setDescription('Reroll the winner(s) of an ended giveaway.')
+						.addStringOption((option: SlashCommandStringOption) =>
+							option.setName('id').setDescription('The message ID of the giveaway').setRequired(true).setMaxLength(32),
+						)
+						.addIntegerOption((option: SlashCommandIntegerOption) =>
+							option.setName('winners').setDescription('Amount of winners to pick').setMinValue(1).setMaxValue(100),
 						),
 				),
 		);
@@ -117,6 +128,11 @@ export class GiveawayCommand extends Command {
 
 		if (subcommand === 'delete') {
 			await this.handleDelete(interaction);
+			return;
+		}
+
+		if (subcommand === 'reroll') {
+			await this.handleReroll(interaction);
 			return;
 		}
 	}
@@ -210,25 +226,26 @@ export class GiveawayCommand extends Command {
 		});
 	}
 
+	private async replyGiveawayNotFound(interaction: Command.ChatInputCommandInteraction<'cached'>) {
+		await interaction.reply({
+			embeds: [errorEmbed(`${emojis.rightArrow2} No giveaway found for that message.`)],
+			flags: MessageFlags.Ephemeral,
+		});
+	}
+
 	private async handleEnd(interaction: Command.ChatInputCommandInteraction<'cached'>) {
 		const messageId = interaction.options.getString('id', true);
 		const giveaway = await getGiveawayByMessageId(interaction.guild.id, messageId);
 
 		if (!giveaway) {
-			await interaction.reply({
-				embeds: [errorEmbed(`${emojis.rightArrow2} No giveaway found for that message.`)],
-				flags: MessageFlags.Ephemeral,
-			});
+			await this.replyGiveawayNotFound(interaction);
 			return;
 		}
 
 		const result = await endGiveaway(interaction.client, giveaway.id);
 
 		if (result.status === 'not-found') {
-			await interaction.reply({
-				embeds: [errorEmbed(`${emojis.rightArrow2} No giveaway found for that message.`)],
-				flags: MessageFlags.Ephemeral,
-			});
+			await this.replyGiveawayNotFound(interaction);
 			return;
 		}
 
@@ -256,10 +273,7 @@ export class GiveawayCommand extends Command {
 		const giveaway = await getGiveawayByMessageId(interaction.guild.id, messageId);
 
 		if (!giveaway) {
-			await interaction.reply({
-				embeds: [errorEmbed(`${emojis.rightArrow2} No giveaway found for that message.`)],
-				flags: MessageFlags.Ephemeral,
-			});
+			await this.replyGiveawayNotFound(interaction);
 			return;
 		}
 
@@ -274,6 +288,52 @@ export class GiveawayCommand extends Command {
 
 		await interaction.reply({
 			embeds: [successEmbed(`${emojis.rightArrow2} Giveaway for **${giveaway.prize}** has been deleted.`)],
+			flags: MessageFlags.Ephemeral,
+		});
+	}
+
+	private async handleReroll(interaction: Command.ChatInputCommandInteraction<'cached'>) {
+		const messageId = interaction.options.getString('id', true);
+		const winners = interaction.options.getInteger('winners') ?? undefined;
+		const giveaway = await getGiveawayByMessageId(interaction.guild.id, messageId);
+
+		if (!giveaway) {
+			await this.replyGiveawayNotFound(interaction);
+			return;
+		}
+
+		const result = await rerollGiveaway(interaction.client, giveaway.id, winners);
+
+		if (result.status === 'not-found') {
+			await this.replyGiveawayNotFound(interaction);
+			return;
+		}
+
+		if (result.status === 'not-ended') {
+			await interaction.reply({
+				embeds: [errorEmbed(`${emojis.rightArrow2} That giveaway hasn't ended yet.`)],
+				flags: MessageFlags.Ephemeral,
+			});
+			return;
+		}
+
+		if (result.status === 'no-entries') {
+			await interaction.reply({
+				embeds: [errorEmbed(`${emojis.rightArrow2} There are no other eligible entries to reroll.`)],
+				flags: MessageFlags.Ephemeral,
+			});
+			return;
+		}
+
+		const winnersLine = formatWinnersLine(result.giveaway.winnerIds);
+
+		await interaction.reply({
+			embeds: [
+				successEmbed(
+					`${emojis.rightArrow2} Giveaway for **${giveaway.prize}** rerolled.\nNew winner(s): ${winnersLine}`,
+				),
+			],
+			allowedMentions: { parse: [] },
 			flags: MessageFlags.Ephemeral,
 		});
 	}

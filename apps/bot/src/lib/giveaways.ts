@@ -217,6 +217,34 @@ export async function finishGiveaway(giveawayId: string): Promise<FinishGiveaway
 	});
 }
 
+export type RerollGiveawayResult =
+	| { status: 'rerolled'; giveaway: GiveawayView }
+	| { status: 'not-ended' }
+	| { status: 'no-entries' }
+	| { status: 'not-found' };
+
+export async function rerollGiveawayWinners(giveawayId: string, count?: number): Promise<RerollGiveawayResult> {
+	return prisma.$transaction(async (tx) => {
+		await lockGiveawayRow(tx, giveawayId);
+
+		const giveaway = await tx.giveaway.findUnique({ where: { id: giveawayId } });
+		if (!giveaway) return { status: 'not-found' };
+		if (!giveaway.ended) return { status: 'not-ended' };
+
+		const previousWinners = new Set(giveaway.winnerIds);
+		const pool = giveaway.entries.filter((id) => !previousWinners.has(id));
+		if (pool.length === 0) return { status: 'no-entries' };
+
+		const winnerIds = pickWinners(pool, count ?? giveaway.winnerCount);
+		const updated = await tx.giveaway.update({
+			where: { id: giveawayId },
+			data: { winnerIds },
+		});
+
+		return { status: 'rerolled', giveaway: updated };
+	});
+}
+
 export function pickWinners(entries: string[], count: number): string[] {
 	const pool = [...entries];
 	const winners: string[] = [];
