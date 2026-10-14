@@ -144,6 +144,7 @@ model Reminder {
   channelId String?
   message   String
   remindAt  DateTime
+  firedAt   DateTime?
   createdAt DateTime @default(now())
 
   server Server? @relation(fields: [guildId], references: [id], onDelete: Cascade)

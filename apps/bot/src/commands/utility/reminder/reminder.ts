@@ -143,7 +143,7 @@ export class ReminderCommand extends Command {
 			}
 
 			await removeReminder(id);
-			await unscheduleReminder(id);
+			await unscheduleReminder(reminder);
 			await interaction.reply({
 				embeds: [successEmbed(`${emojis.rightArrow2} Reminder removed.`)],
 				flags: MessageFlags.Ephemeral,

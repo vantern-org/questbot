@@ -12,10 +12,10 @@
 		}
 	},
 	"scripts": {
-		"build": "prisma generate && tsc",
+		"build": "prisma generate --no-hints && tsc",
 		"db:push": "prisma db push",
-		"db:generate": "dotenv -e ../../.env -- prisma generate",
-		"postinstall": "prisma generate"
+		"db:generate": "dotenv -e ../../.env -- prisma generate --no-hints",
+		"postinstall": "prisma generate --no-hints"
 	},
 	"dependencies": {
 		"@prisma/adapter-pg": "^7.10.0",
