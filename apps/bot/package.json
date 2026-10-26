@@ -37,7 +37,7 @@
 		"ms": "^2.1.3",
 		"sharp": "^0.35.5",
 		"syllable-count-english": "^1.0.6",
-		"undici": "^8.11.2",
+		"undici": "^8.12.2",
 		"zod": "^4.6.5"
 	},
 	"devDependencies": {
