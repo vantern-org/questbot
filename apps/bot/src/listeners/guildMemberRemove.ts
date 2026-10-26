@@ -24,7 +24,7 @@ export class GuildMemberRemoveListener extends Listener<typeof Events.GuildMembe
 		await Promise.all([
 			removeAfk(member.guild.id, member.id).catch((err) => logger.error(err)),
 			clearReminders(member.guild.id, member.id).catch((err) => logger.error(err)),
-			...reminders.map((reminder) => unscheduleReminder(reminder.id).catch((err) => logger.error(err))),
+			...reminders.map((reminder) => unscheduleReminder(reminder).catch((err) => logger.error(err))),
 		]);
 
 		const banEntry = await getRecentAuditLogEntry(member.guild, AuditLogEvent.MemberBanAdd, member.id);
