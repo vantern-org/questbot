@@ -139,13 +139,20 @@ export async function searchGuildGiveaways(guildId: string, query: string) {
 		where: {
 			guildId,
 			messageId: { not: null },
+			ended: false,
 			OR: query
 				? [{ prize: { contains: query, mode: 'insensitive' } }, { messageId: { startsWith: query } }]
 				: undefined,
 		},
-		select: { messageId: true, prize: true, ended: true },
-		orderBy: [{ ended: 'asc' }, { createdAt: 'desc' }],
+		select: { messageId: true, prize: true },
+		orderBy: { createdAt: 'desc' },
 		take: 25,
+	});
+}
+
+export async function clearExpiredGiveaways() {
+	return prisma.giveaway.deleteMany({
+		where: { ended: true, endsAt: { lt: new Date(Date.now() - 7 * 86_400_000) } }, // 7d after ending
 	});
 }
 
@@ -225,7 +232,7 @@ export async function finishGiveaway(giveawayId: string): Promise<FinishGiveaway
 		const winnerIds = pickWinners(giveaway.entries, giveaway.winnerCount);
 		const updated = await tx.giveaway.update({
 			where: { id: giveawayId },
-			data: { ended: true, winnerIds },
+			data: { ended: true, winnerIds, endsAt: new Date() },
 		});
 
 		return { status: 'ended', giveaway: updated };

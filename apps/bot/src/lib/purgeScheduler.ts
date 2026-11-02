@@ -2,6 +2,7 @@
 // Copyright(C) 2026 Vantern
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { clearExpiredGiveaways } from './giveaways.js';
 import { logger } from './logger.js';
 import { createQueue } from './queue.js';
 import { clearExpiredReminders } from './reminders.js';
@@ -13,6 +14,7 @@ export function initPurgeScheduler(): void {
 		await purgeExpiredWarns();
 		await purgeDeletedServers();
 		await clearExpiredReminders();
+		await clearExpiredGiveaways();
 	});
 
 	queue
