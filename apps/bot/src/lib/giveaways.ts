@@ -134,6 +134,21 @@ export async function getGiveawayByMessageId(guildId: string, messageId: string)
 	return giveaway;
 }
 
+export async function searchGuildGiveaways(guildId: string, query: string) {
+	return prisma.giveaway.findMany({
+		where: {
+			guildId,
+			messageId: { not: null },
+			OR: query
+				? [{ prize: { contains: query, mode: 'insensitive' } }, { messageId: { startsWith: query } }]
+				: undefined,
+		},
+		select: { messageId: true, prize: true, ended: true },
+		orderBy: [{ ended: 'asc' }, { createdAt: 'desc' }],
+		take: 25,
+	});
+}
+
 export async function deleteGiveawayByMessageId(messageId: string) {
 	await prisma.giveaway.deleteMany({ where: { messageId } });
 }

@@ -2,17 +2,26 @@
 // Copyright(C) 2026 Vantern
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import type { Prisma } from '@questbot/database';
 import { Command } from '@sapphire/framework';
 import {
+	ActionRowBuilder,
+	ButtonBuilder,
+	ButtonStyle,
+	type Guild,
 	type GuildMember,
 	type Message,
+	type MessageComponentInteraction,
 	MessageFlags,
+	messageLink,
 	PermissionFlagsBits,
 	PermissionsBitField,
 	type SlashCommandBuilder,
 	type SlashCommandIntegerOption,
 	type SlashCommandStringOption,
 	type SlashCommandSubcommandBuilder,
+	TextInputBuilder,
+	TextInputStyle,
 } from 'discord.js';
 import ms, { type StringValue } from 'ms';
 import { containsBlockedWord } from '#lib/automod.js';
@@ -24,14 +33,115 @@ import {
 	deleteGiveaway,
 	formatWinnersLine,
 	getGiveawayByMessageId,
+	searchGuildGiveaways,
 	setGiveawayMessageId,
 } from '#lib/giveaways.js';
 import { logger } from '#lib/logger.js';
+import { truncate } from '#lib/logging.js';
+import { awaitMessageComponentSafe } from '#utils/collectors.js';
 import { errorEmbed, infoEmbed, successEmbed } from '#utils/embeds.js';
 import { emojis } from '#utils/emoji.js';
 import { getChannel } from '#utils/getChannel.js';
+import { promptForModalInput } from '#utils/modals.js';
 
 const MAX_DURATION = ms('30d');
+
+interface ViewEntry {
+	userId: string;
+	position: number;
+}
+
+async function searchEntries(guild: Guild, entries: ViewEntry[], query: string): Promise<ViewEntry[]> {
+	const entryIds = new Set(entries.map((entry) => entry.userId));
+	if (entryIds.has(query)) return entries.filter((entry) => entry.userId === query);
+
+	const matches = new Set<string>();
+
+	const fetched = await guild.members.fetch({ query, limit: 100, time: 10_000 }).catch(() => null);
+	for (const member of fetched?.values() ?? []) {
+		if (entryIds.has(member.id)) matches.add(member.id);
+	}
+
+	const lowered = query.toLowerCase();
+	for (const entry of entries) {
+		const member = guild.members.cache.get(entry.userId);
+		if (!member) continue;
+		if (member.displayName.toLowerCase().includes(lowered) || member.user.username.toLowerCase().includes(lowered)) {
+			matches.add(entry.userId);
+		}
+	}
+
+	return entries.filter((entry) => matches.has(entry.userId));
+}
+
+function buildViewEmbed(
+	giveaway: Prisma.GiveawayModel,
+	shown: ViewEntry[],
+	page: number,
+	totalPages: number,
+	query: string | null,
+) {
+	const unix = Math.floor(giveaway.endsAt.getTime() / 1000);
+	const entriesCount =
+		giveaway.maxEntries !== null ? `${giveaway.entries.length}/${giveaway.maxEntries}` : `${giveaway.entries.length}`;
+
+	const info = [
+		`**Prize:** ${giveaway.prize}`,
+		`**Status:** ${giveaway.ended ? `Ended <t:${unix}:R>` : `Active, ends <t:${unix}:R>`}`,
+		`**Hosted by:** <@${giveaway.hostId}>`,
+		`**Channel:** <#${giveaway.channelId}>`,
+		giveaway.ended ? `**Winner(s):** ${formatWinnersLine(giveaway.winnerIds)}` : `**Winners:** ${giveaway.winnerCount}`,
+		`**Entries:** ${entriesCount}`,
+	];
+
+	if (giveaway.messageId) {
+		info.push(`[Jump to giveaway](${messageLink(giveaway.channelId, giveaway.messageId, giveaway.guildId)})`);
+	}
+
+	const heading = query
+		? `**Search:** \`${query.replaceAll('`', '')}\` (${shown.length} ${shown.length === 1 ? 'match' : 'matches'})`
+		: '**Members**';
+
+	const slice = shown.slice(page * 20, (page + 1) * 20);
+	const list = slice.length
+		? slice.map((entry) => `\`${entry.position}.\` <@${entry.userId}> \`${entry.userId}\``).join('\n')
+		: query
+			? 'No entries match that search.'
+			: 'No entries yet.';
+
+	const embed = infoEmbed([...info, '', heading, list].join('\n')).setTitle('Giveaway Details');
+	return totalPages > 1 ? embed.setFooter({ text: `Page ${page + 1} of ${totalPages}` }) : embed;
+}
+
+function buildViewComponents(page: number, totalPages: number, hasQuery: boolean, hasEntries: boolean) {
+	if (!hasEntries) return [];
+
+	const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+		new ButtonBuilder()
+			.setCustomId('giveawayViewPrev')
+			.setEmoji('◀')
+			.setStyle(ButtonStyle.Secondary)
+			.setDisabled(page === 0),
+		new ButtonBuilder()
+			.setCustomId('giveawayViewNext')
+			.setEmoji('▶')
+			.setStyle(ButtonStyle.Secondary)
+			.setDisabled(page >= totalPages - 1),
+		new ButtonBuilder()
+			.setCustomId('giveawayViewSearch')
+			.setLabel('Search')
+			.setEmoji('🔍')
+			.setStyle(ButtonStyle.Primary),
+	);
+
+	if (hasQuery) {
+		row.addComponents(
+			new ButtonBuilder().setCustomId('giveawayViewClear').setLabel('Clear').setStyle(ButtonStyle.Secondary),
+		);
+	}
+
+	return [row];
+}
 
 export class GiveawayCommand extends Command {
 	public constructor(context: Command.LoaderContext, options: Command.Options) {
@@ -42,7 +152,7 @@ export class GiveawayCommand extends Command {
 		registry.registerChatInputCommand((builder: SlashCommandBuilder) =>
 			builder
 				.setName('giveaway')
-				.setDescription('Start, end, delete or reroll a giveaway.')
+				.setDescription('Start, end, delete, reroll or view a giveaway.')
 				.setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
 				.addSubcommand((subcommand: SlashCommandSubcommandBuilder) =>
 					subcommand
@@ -91,7 +201,36 @@ export class GiveawayCommand extends Command {
 						.addIntegerOption((option: SlashCommandIntegerOption) =>
 							option.setName('winners').setDescription('Amount of winners to pick').setMinValue(1).setMaxValue(100),
 						),
+				)
+				.addSubcommand((subcommand: SlashCommandSubcommandBuilder) =>
+					subcommand
+						.setName('view')
+						.setDescription('View a giveaway and the members in it.')
+						.addStringOption((option: SlashCommandStringOption) =>
+							option
+								.setName('id')
+								.setDescription('The giveaway to view')
+								.setRequired(true)
+								.setAutocomplete(true)
+								.setMaxLength(100),
+						),
 				),
+		);
+	}
+
+	public override async autocompleteRun(interaction: Command.AutocompleteInteraction) {
+		if (!interaction.guildId || !interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild)) {
+			await interaction.respond([]);
+			return;
+		}
+
+		const giveaways = await searchGuildGiveaways(interaction.guildId, interaction.options.getFocused().trim());
+
+		await interaction.respond(
+			giveaways.map((giveaway) => ({
+				name: `${truncate(giveaway.prize, 88)} (${giveaway.ended ? 'ended' : 'active'})`,
+				value: giveaway.messageId!,
+			})),
 		);
 	}
 
@@ -133,6 +272,11 @@ export class GiveawayCommand extends Command {
 
 		if (subcommand === 'reroll') {
 			await this.handleReroll(interaction);
+			return;
+		}
+
+		if (subcommand === 'view') {
+			await this.handleView(interaction);
 			return;
 		}
 	}
@@ -290,6 +434,84 @@ export class GiveawayCommand extends Command {
 			embeds: [successEmbed(`${emojis.rightArrow2} Giveaway for **${giveaway.prize}** has been deleted.`)],
 			flags: MessageFlags.Ephemeral,
 		});
+	}
+
+	private async handleView(interaction: Command.ChatInputCommandInteraction<'cached'>) {
+		const messageId = interaction.options.getString('id', true).trim();
+		const giveaway = await getGiveawayByMessageId(interaction.guild.id, messageId);
+
+		if (!giveaway) {
+			await this.replyGiveawayNotFound(interaction);
+			return;
+		}
+
+		const allEntries: ViewEntry[] = giveaway.entries.map((userId, index) => ({ userId, position: index + 1 }));
+		const hasEntries = allEntries.length > 0;
+		let shown = allEntries;
+		let query: string | null = null;
+		let page = 0;
+
+		const totalPages = () => Math.max(1, Math.ceil(shown.length / 20));
+		const render = () => ({
+			embeds: [buildViewEmbed(giveaway, shown, page, totalPages(), query)],
+			components: buildViewComponents(page, totalPages(), query !== null, hasEntries),
+			allowedMentions: { parse: [] },
+		});
+
+		const response = await interaction.reply({ ...render(), flags: MessageFlags.Ephemeral, withResponse: true });
+		if (!hasEntries) return;
+
+		const message = response.resource!.message!;
+
+		while (true) {
+			const btn = await awaitMessageComponentSafe(message, {
+				filter: (i: MessageComponentInteraction) => i.user.id === interaction.user.id,
+				time: 120_000,
+			});
+
+			if (!btn) {
+				await interaction.editReply({ components: [] }).catch(() => {});
+				break;
+			}
+
+			if (btn.customId === 'giveawayViewPrev') page = Math.max(0, page - 1);
+			if (btn.customId === 'giveawayViewNext') page = Math.min(totalPages() - 1, page + 1);
+
+			if (btn.customId === 'giveawayViewClear') {
+				query = null;
+				shown = allEntries;
+				page = 0;
+			}
+
+			if (btn.customId === 'giveawayViewSearch') {
+				const input = new TextInputBuilder()
+					.setCustomId('value')
+					.setStyle(TextInputStyle.Short)
+					.setRequired(true)
+					.setMaxLength(32)
+					.setPlaceholder('username or id');
+				if (query) input.setValue(query);
+
+				const submitted = await promptForModalInput(
+					btn,
+					`giveawayViewSearch-${interaction.id}`,
+					'Search Entries',
+					'Username, nickname or user ID',
+					input,
+				);
+
+				if (!submitted) continue;
+
+				query = submitted.fields.getTextInputValue('value').trim() || null;
+				shown = query ? await searchEntries(interaction.guild, allEntries, query) : allEntries;
+				page = 0;
+
+				await submitted.editReply(render());
+				continue;
+			}
+
+			await btn.update(render());
+		}
 	}
 
 	private async handleReroll(interaction: Command.ChatInputCommandInteraction<'cached'>) {
