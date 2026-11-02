@@ -104,7 +104,7 @@ function buildViewEmbed(
 
 	const slice = shown.slice(page * 20, (page + 1) * 20);
 	const list = slice.length
-		? slice.map((entry) => `\`${entry.position}.\` <@${entry.userId}> \`${entry.userId}\``).join('\n')
+		? slice.map((entry) => `${entry.position}\\. <@${entry.userId}> \`${entry.userId}\``).join('\n')
 		: query
 			? 'No entries match that search.'
 			: 'No entries yet.';
@@ -227,10 +227,7 @@ export class GiveawayCommand extends Command {
 		const giveaways = await searchGuildGiveaways(interaction.guildId, interaction.options.getFocused().trim());
 
 		await interaction.respond(
-			giveaways.map((giveaway) => ({
-				name: `${truncate(giveaway.prize, 88)} (${giveaway.ended ? 'ended' : 'active'})`,
-				value: giveaway.messageId!,
-			})),
+			giveaways.map((giveaway) => ({ name: truncate(giveaway.prize, 100), value: giveaway.messageId! })),
 		);
 	}
 
