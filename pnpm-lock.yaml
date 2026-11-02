@@ -47,7 +47,7 @@ importers:
         version: 2.1.0
       bullmq:
         specifier: ^6.4.2
-        version: 6.4.2(ioredis@5.11.1(supports-color@10.2.2))(pg@8.22.0)
+        version: 6.4.2(ioredis@6.0.0(supports-color@10.2.2))(pg@8.22.0)
       countries-and-timezones:
         specifier: ^3.11.0
         version: 3.11.0
@@ -55,8 +55,8 @@ importers:
         specifier: ^14.27.0
         version: 14.27.0
       ioredis:
-        specifier: ^5.11.1
-        version: 5.11.1(supports-color@10.2.2)
+        specifier: ^6.0.0
+        version: 6.0.0(supports-color@10.2.2)
       ipaddr.js:
         specifier: ^2.5.0
         version: 2.5.0
@@ -775,8 +775,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@ioredis/commands@1.10.0':
-    resolution: {integrity: sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q==}
+  '@ioredis/commands@2.0.0':
+    resolution: {integrity: sha512-vrx0AE/T0h7cRZwfo1M39Cr+ZhZrkf0V8mQN75wucKCxCLD9l/VX6no3gFvrLqD1IlG/1LtzWovqEw3t0Vr9zg==}
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -2994,9 +2994,9 @@ packages:
     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
     engines: {node: '>=12'}
 
-  ioredis@5.11.1:
-    resolution: {integrity: sha512-ehuGcf94bQXhfagULNXrJdfnWO38v070jxSx/qE87Kjzmu2fU7ro5EFAb+OPituLqgfyuQaym5DlrNydW2sJ9A==}
-    engines: {node: '>=12.22.0'}
+  ioredis@6.0.0:
+    resolution: {integrity: sha512-f+Dtubxfpf6KYFq7WVXJoOLn0bk4TJrMrN9SzeE+jrWrCWj7XX3fA6vkryafhADX+GMymRxgDJDOI33COkJc0w==}
+    engines: {node: '>=20.0.0'}
 
   ipaddr.js@1.9.1:
     resolution: {integrity: sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g==}
@@ -3751,10 +3751,6 @@ packages:
 
   redis-errors@1.2.0:
     resolution: {integrity: sha512-1qny3OExCf0UvUV/5wpYKf2YwPcOqXzkwKKSmKHiE6ZMQs5heeE/c8eXK+PNllPvmjgAbfnsbpkGZWy8cBpn9w==}
-    engines: {node: '>=4'}
-
-  redis-parser@3.0.0:
-    resolution: {integrity: sha512-DJnGAeenTdpMEH6uAJRK/uiyEIH9WVsUmoLwzudwGJUwZPp80PDBWPHXSAGNPwNvIXAbe7MSUB1zQFugFml66A==}
     engines: {node: '>=4'}
 
   rehype-autolink-headings@7.1.0:
@@ -4722,7 +4718,7 @@ snapshots:
   '@img/sharp-win32-x64@0.35.5':
     optional: true
 
-  '@ioredis/commands@1.10.0': {}
+  '@ioredis/commands@2.0.0': {}
 
   '@isaacs/cliui@8.0.2':
     dependencies:
@@ -6372,7 +6368,7 @@ snapshots:
 
   buffer-from@1.1.2: {}
 
-  bullmq@6.4.2(ioredis@5.11.1(supports-color@10.2.2))(pg@8.22.0):
+  bullmq@6.4.2(ioredis@6.0.0(supports-color@10.2.2))(pg@8.22.0):
     dependencies:
       cron-parser: 5.10.2
       msgpackr: 2.1.2
@@ -6380,7 +6376,7 @@ snapshots:
       semver: 7.8.5
       tslib: 2.8.1
     optionalDependencies:
-      ioredis: 5.11.1(supports-color@10.2.2)
+      ioredis: 6.0.0(supports-color@10.2.2)
       pg: 8.22.0
 
   bytes@3.1.2: {}
@@ -7039,14 +7035,13 @@ snapshots:
 
   internmap@2.0.3: {}
 
-  ioredis@5.11.1(supports-color@10.2.2):
+  ioredis@6.0.0(supports-color@10.2.2):
     dependencies:
-      '@ioredis/commands': 1.10.0
+      '@ioredis/commands': 2.0.0
       cluster-key-slot: 1.1.1
       debug: 4.4.3(supports-color@10.2.2)
       denque: 2.1.0
       redis-errors: 1.2.0
-      redis-parser: 3.0.0
       standard-as-callback: 2.1.0
     transitivePeerDependencies:
       - supports-color
@@ -7991,10 +7986,6 @@ snapshots:
       vfile: 6.0.3
 
   redis-errors@1.2.0: {}
-
-  redis-parser@3.0.0:
-    dependencies:
-      redis-errors: 1.2.0
 
   rehype-autolink-headings@7.1.0:
     dependencies:
